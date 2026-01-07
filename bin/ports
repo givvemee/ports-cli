@@ -1,0 +1,61 @@
+#!/bin/bash
+
+VERSION="1.0.0"
+
+# Colors
+BOLD='\033[1m'
+DIM='\033[2m'
+RESET='\033[0m'
+
+show_help() {
+  echo "Usage: ports [options]"
+  echo ""
+  echo "Show listening ports with process info"
+  echo ""
+  echo "Options:"
+  echo "  -h, --help     Show this help message"
+  echo "  -v, --version  Show version"
+}
+
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+  show_help
+  exit 0
+fi
+
+if [[ "$1" == "-v" || "$1" == "--version" ]]; then
+  echo "ports $VERSION"
+  exit 0
+fi
+
+# Header
+printf "${BOLD}%-8s %-24s %s${RESET}\n" "PORT" "PROCESS" "PATH"
+printf "${DIM}%-8s %-24s %s${RESET}\n" "----" "-------" "----"
+
+# Get listening ports
+lsof -iTCP -sTCP:LISTEN -n -P 2>/dev/null | grep -v "^COMMAND" | while read line; do
+  proc=$(echo "$line" | awk '{print $1}')
+  pid=$(echo "$line" | awk '{print $2}')
+  port=$(echo "$line" | awk '{print $9}' | sed 's/.*://')
+
+  # Skip if we've already seen this port (avoid duplicates)
+  if [[ " ${seen_ports[@]} " =~ " ${port} " ]]; then
+    continue
+  fi
+  seen_ports+=("$port")
+
+  # For Node processes, try to get project name from package.json
+  if [ "$proc" = "node" ]; then
+    cwd=$(lsof -p "$pid" 2>/dev/null | grep cwd | awk '{print $9}')
+    if [ -f "$cwd/package.json" ]; then
+      name=$(grep '"name"' "$cwd/package.json" | head -1 | sed 's/.*: *"\([^"]*\)".*/\1/')
+      if [ -n "$name" ]; then
+        proc="$name"
+      fi
+    fi
+    # Shorten home directory path
+    cwd=$(echo "$cwd" | sed "s|$HOME|~|")
+    printf "%-8s %-24s %s\n" "$port" "$proc" "$cwd"
+  else
+    printf "%-8s %-24s %s\n" "$port" "$proc" "-"
+  fi
+done
