@@ -1,10 +1,12 @@
 #!/bin/bash
 
-VERSION="1.1.1"
+VERSION="1.2.0"
 
 # Colors
 BOLD='\033[1m'
 DIM='\033[2m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
 RESET='\033[0m'
 
 # Flags
@@ -12,14 +14,55 @@ USER_ONLY=false
 
 show_help() {
   echo "Usage: ports [options]"
+  echo "       ports bye <port>"
   echo ""
   echo "Show listening ports with process info"
+  echo ""
+  echo "Commands:"
+  echo "  bye <port>     Kill process running on specified port"
   echo ""
   echo "Options:"
   echo "  -u, --user     Show only user-started processes (with project path)"
   echo "  -h, --help     Show this help message"
   echo "  -v, --version  Show version"
 }
+
+kill_port() {
+  local port=$1
+  
+  if [ -z "$port" ]; then
+    echo "${RED}Error: Please specify a port number${RESET}"
+    echo "Usage: ports bye <port>"
+    exit 1
+  fi
+  
+  # Find PID using the port
+  local pid=$(lsof -ti TCP:$port -sTCP:LISTEN 2>/dev/null)
+  
+  if [ -z "$pid" ]; then
+    echo "${RED}No process found on port $port${RESET}"
+    exit 1
+  fi
+  
+  # Get process name for display
+  local proc_name=$(lsof -i TCP:$port -sTCP:LISTEN 2>/dev/null | grep -v "^COMMAND" | head -1 | awk '{print $1}')
+  
+  # Kill the process
+  kill -9 $pid 2>/dev/null
+  
+  if [ $? -eq 0 ]; then
+    echo "${GREEN}✓ Killed $proc_name (PID: $pid) on port $port${RESET}"
+  else
+    echo "${RED}Failed to kill process on port $port. Try with sudo.${RESET}"
+    exit 1
+  fi
+}
+
+# Handle 'bye' command
+if [ "$1" = "bye" ]; then
+  kill_port "$2"
+  exit 0
+fi
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -48,8 +91,8 @@ done
 printf "${BOLD}%-8s %-24s %s${RESET}\n" "PORT" "PROCESS" "PATH"
 printf "${DIM}%-8s %-24s %s${RESET}\n" "----" "-------" "----"
 
-# Track seen ports to avoid duplicates
-declare -A seen_ports
+# Track seen ports (bash 3.x compatible)
+seen_ports=""
 
 # Get listening ports using process substitution to avoid subshell
 while read line; do
@@ -59,9 +102,11 @@ while read line; do
   pid=$(echo "$line" | awk '{print $2}')
   port=$(echo "$line" | awk '{print $9}' | sed 's/.*://')
 
-  # Skip if we've already seen this port
-  [[ -n "${seen_ports[$port]}" ]] && continue
-  seen_ports[$port]=1
+  # Skip if we've already seen this port (bash 3.x compatible)
+  if echo "$seen_ports" | grep -q ":${port}:"; then
+    continue
+  fi
+  seen_ports="${seen_ports}:${port}:"
 
   display_path="-"
 

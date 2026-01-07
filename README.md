@@ -12,8 +12,9 @@ brew install ports-cli
 ## Usage
 
 ```bash
-ports          # Show all listening ports
-ports -u       # Show only user-started processes
+ports              # Show all listening ports
+ports -u           # Show only user-started processes
+ports bye 3000     # Kill process on port 3000
 ```
 
 ## Output
