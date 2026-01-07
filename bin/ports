@@ -1,11 +1,14 @@
 #!/bin/bash
 
-VERSION="1.0.0"
+VERSION="1.0.1"
 
 # Colors
 BOLD='\033[1m'
 DIM='\033[2m'
 RESET='\033[0m'
+
+# Flags
+USER_ONLY=false
 
 show_help() {
   echo "Usage: ports [options]"
@@ -13,23 +16,40 @@ show_help() {
   echo "Show listening ports with process info"
   echo ""
   echo "Options:"
+  echo "  -u, --user     Show only user-started processes (with project path)"
   echo "  -h, --help     Show this help message"
   echo "  -v, --version  Show version"
 }
 
-if [[ "$1" == "-h" || "$1" == "--help" ]]; then
-  show_help
-  exit 0
-fi
-
-if [[ "$1" == "-v" || "$1" == "--version" ]]; then
-  echo "ports $VERSION"
-  exit 0
-fi
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -v|--version)
+      echo "ports $VERSION"
+      exit 0
+      ;;
+    -u|--user)
+      USER_ONLY=true
+      shift
+      ;;
+    *)
+      echo "Unknown option: $1"
+      show_help
+      exit 1
+      ;;
+  esac
+done
 
 # Header
 printf "${BOLD}%-8s %-24s %s${RESET}\n" "PORT" "PROCESS" "PATH"
 printf "${DIM}%-8s %-24s %s${RESET}\n" "----" "-------" "----"
+
+# Track seen ports to avoid duplicates
+declare -A seen_ports
 
 # Get listening ports
 lsof -iTCP -sTCP:LISTEN -n -P 2>/dev/null | grep -v "^COMMAND" | while read line; do
@@ -37,11 +57,14 @@ lsof -iTCP -sTCP:LISTEN -n -P 2>/dev/null | grep -v "^COMMAND" | while read line
   pid=$(echo "$line" | awk '{print $2}')
   port=$(echo "$line" | awk '{print $9}' | sed 's/.*://')
 
-  # Skip if we've already seen this port (avoid duplicates)
-  if [[ " ${seen_ports[@]} " =~ " ${port} " ]]; then
+  # Skip if we've already seen this port
+  if [[ -n "${seen_ports[$port]}" ]]; then
     continue
   fi
-  seen_ports+=("$port")
+  seen_ports[$port]=1
+
+  cwd=""
+  display_path="-"
 
   # For Node processes, try to get project name from package.json
   if [ "$proc" = "node" ]; then
@@ -53,9 +76,15 @@ lsof -iTCP -sTCP:LISTEN -n -P 2>/dev/null | grep -v "^COMMAND" | while read line
       fi
     fi
     # Shorten home directory path
-    cwd=$(echo "$cwd" | sed "s|$HOME|~|")
-    printf "%-8s %-24s %s\n" "$port" "$proc" "$cwd"
-  else
-    printf "%-8s %-24s %s\n" "$port" "$proc" "-"
+    display_path=$(echo "$cwd" | sed "s|$HOME|~|")
   fi
+
+  # Filter for user-only mode
+  if [ "$USER_ONLY" = true ]; then
+    if [ "$display_path" = "-" ] || [ -z "$display_path" ]; then
+      continue
+    fi
+  fi
+
+  printf "%-8s %-24s %s\n" "$port" "$proc" "$display_path"
 done
