@@ -91,6 +91,7 @@ done
 declare -a ports_data=()
 seen_ports=""
 max_proc_len=7  # Minimum width for "PROCESS" header
+SEP=$'\x1f'  # Unit Separator
 
 while read line; do
   [[ -z "$line" ]] && continue
@@ -131,7 +132,7 @@ while read line; do
   [ $proc_len -gt $max_proc_len ] && max_proc_len=$proc_len
 
   # Store data for later output
-  ports_data+=("$port|$proc|$display_path")
+  ports_data+=("$port${SEP}$proc${SEP}$display_path")
 done < <(lsof +c 0 -iTCP -sTCP:LISTEN -n -P 2>/dev/null | grep -v "^COMMAND")
 
 # Add padding
@@ -143,8 +144,10 @@ printf "${DIM}%-8s %-${max_proc_len}s %s${RESET}\n" "----" "-------" "----"
 
 # Output collected data
 for entry in "${ports_data[@]}"; do
-  port=$(echo "$entry" | cut -d'|' -f1)
-  proc=$(echo "$entry" | cut -d'|' -f2)
-  display_path=$(echo "$entry" | cut -d'|' -f3)
+  port=$(echo "$entry" | cut -d"$SEP" -f1)
+  proc=$(echo "$entry" | cut -d"$SEP" -f2)
+  display_path=$(echo "$entry" | cut -d"$SEP" -f3)
+  # Replace x20 with space in process name
+  proc=$(echo "$proc" | sed 's/x20/ /g')
   printf "%-8s %-${max_proc_len}s %s\n" "$port" "$proc" "$display_path"
 done
